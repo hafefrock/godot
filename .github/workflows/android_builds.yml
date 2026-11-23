@@ -27,7 +27,7 @@ jobs:
             target: editor
             instrumented_tests: true
             scons-flags: >-
-              arch=arm64
+              arch=arm32
               production=yes
 
           - name: Template arm32 (target=template_debug, arch=arm32)
