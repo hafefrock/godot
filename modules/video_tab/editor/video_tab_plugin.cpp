@@ -1,6 +1,6 @@
 #include "video_tab_plugin.h"
 
-#include "core/object/callable_method_pointer.h"
+#include "core/object/callable_mp.h"
 #include "editor/docks/editor_dock_manager.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
