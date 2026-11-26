@@ -119,7 +119,17 @@ jobs:
         if: matrix.target == 'editor'
         run: |
           cd platform/android/java
-          ./gradlew generateGodotEditor
+          # Coba sampai 3 kali (jaringan runner kadang bermasalah) dan tampilkan detail galatnya.
+          n=0
+          until ./gradlew generateGodotEditor --info --stacktrace; do
+            n=$((n+1))
+            if [ "$n" -ge 3 ]; then
+              echo "Gradle gagal setelah 3 percobaan"
+              exit 1
+            fi
+            echo "Percobaan $n gagal, menunggu 45 detik..."
+            sleep 45
+          done
           cd ../../..
           ls -l bin/android_editor_builds/
 
