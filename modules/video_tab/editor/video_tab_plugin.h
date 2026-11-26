@@ -3,21 +3,26 @@
 #include "editor/docks/editor_dock.h"
 #include "editor/plugins/editor_plugin.h"
 
+class Button;
 class ColorPickerButton;
 class GridContainer;
+class HSlider;
 class ItemList;
 class Label;
 class LineEdit;
 class ScrollContainer;
 class SpinBox;
+class Timer;
 class VideoDock;
+class VideoPreview;
 
 // Timeline: satu baris per item, batang bisa digeser untuk memindah waktu tampil.
+// Ketuk baris angka di atas untuk memindah posisi waktu (garis merah).
 class VideoTimeline : public Control {
 	GDCLASS(VideoTimeline, Control);
 
 	VideoDock *dock = nullptr;
-	int drag_row = -1;
+	int drag_row = -1; // -1: tidak menyeret, -2: menggeser posisi waktu.
 	double drag_dx = 0.0;
 
 protected:
@@ -52,9 +57,15 @@ class VideoDock : public EditorDock {
 	Array items; // Daftar Dictionary.
 	int selected = -1;
 	bool updating = false;
+	double current_time = 0.0;
 
 	Label *status = nullptr;
 	SpinBox *f_duration = nullptr;
+	VideoPreview *preview = nullptr;
+	HSlider *time_slider = nullptr;
+	Label *time_label = nullptr;
+	Button *play_button = nullptr;
+	Timer *play_timer = nullptr;
 	ItemList *list = nullptr;
 	VideoTimeline *timeline = nullptr;
 	ScrollContainer *form_scroll = nullptr;
@@ -77,19 +88,26 @@ class VideoDock : public EditorDock {
 	void _delete_item();
 	void _refresh();
 	void _fill_form();
+	void _redraw_all();
 
 	void _on_list_selected(int p_index);
 	void _on_duration(double p_value);
 	void _on_text(const String &p_text);
 	void _on_num(double p_value, int p_field);
 	void _on_color(const Color &p_color);
+	void _on_slider(double p_value);
+	void _on_play();
+	void _on_tick();
 
 public:
 	Array &get_items() { return items; }
 	double get_duration() const;
+	double get_time() const { return current_time; }
+	Color get_background() const;
 	int get_selected() const { return selected; }
 	String item_label(const Dictionary &p_item) const;
 	void select_item(int p_index);
+	void set_time(double p_time);
 	void timeline_changed();
 
 	VideoDock();

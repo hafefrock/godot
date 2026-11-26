@@ -14,10 +14,13 @@
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/scroll_container.h"
+#include "scene/gui/slider.h"
 #include "scene/gui/spin_box.h"
+#include "scene/main/timer.h"
 #include "scene/resources/font.h"
 #include "scene/scene_string_names.h"
 #include "servers/display/display_server.h"
+#include "video_preview.h"
 
 static const char *SCENE_PATH = "res://scene.json";
 
@@ -58,6 +61,9 @@ void VideoTimeline::_notification(int p_what) {
 		draw_rect(Rect2(x1, y, MAX(x2 - x1, 4.0f), ROW_H - 6.0f), col);
 		draw_string(font, Vector2(x1 + 4, y + 16), dock->item_label(it), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0, 0, 0));
 	}
+
+	const float px = w * CLAMP(dock->get_time() / dur, 0.0, 1.0);
+	draw_line(Vector2(px, 0), Vector2(px, get_size().y), Color(1.0, 0.3, 0.3), 2.0f);
 }
 
 void VideoTimeline::gui_input(const Ref<InputEvent> &p_event) {
@@ -70,12 +76,17 @@ void VideoTimeline::gui_input(const Ref<InputEvent> &p_event) {
 	Ref<InputEventMouseButton> mb = p_event;
 	if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT) {
 		if (mb->is_pressed()) {
-			const int row = (int)((mb->get_position().y - TOP) / ROW_H);
-			if (row >= 0 && row < items.size()) {
-				dock->select_item(row);
-				Dictionary it = items[row];
-				drag_row = row;
-				drag_dx = mb->get_position().x / get_size().x * dur - (double)it.get("start", 0.0);
+			if (mb->get_position().y < TOP) {
+				drag_row = -2;
+				dock->set_time(CLAMP(mb->get_position().x / get_size().x * dur, 0.0, dur));
+			} else {
+				const int row = (int)((mb->get_position().y - TOP) / ROW_H);
+				if (row >= 0 && row < items.size()) {
+					dock->select_item(row);
+					Dictionary it = items[row];
+					drag_row = row;
+					drag_dx = mb->get_position().x / get_size().x * dur - (double)it.get("start", 0.0);
+				}
 			}
 		} else {
 			drag_row = -1;
@@ -84,6 +95,10 @@ void VideoTimeline::gui_input(const Ref<InputEvent> &p_event) {
 	}
 
 	Ref<InputEventMouseMotion> mm = p_event;
+	if (mm.is_valid() && drag_row == -2) {
+		dock->set_time(CLAMP(mm->get_position().x / get_size().x * dur, 0.0, dur));
+		return;
+	}
 	if (mm.is_valid() && drag_row >= 0 && drag_row < items.size()) {
 		Dictionary it = items[drag_row];
 		const double start = it.get("start", 0.0);
@@ -160,6 +175,30 @@ VideoDock::VideoDock() {
 	f_duration->connect(SceneStringName(value_changed), callable_mp(this, &VideoDock::_on_duration));
 	dur_row->add_child(f_duration);
 
+	preview = memnew(VideoPreview);
+	preview->set_dock(this);
+	preview->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	root->add_child(preview);
+
+	HBoxContainer *play_row = memnew(HBoxContainer);
+	root->add_child(play_row);
+	play_button = _make_button("Putar", callable_mp(this, &VideoDock::_on_play));
+	play_row->add_child(play_button);
+	time_slider = memnew(HSlider);
+	time_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	time_slider->set_min(0.0);
+	time_slider->set_max(10.0);
+	time_slider->set_step(0.05);
+	time_slider->connect(SceneStringName(value_changed), callable_mp(this, &VideoDock::_on_slider));
+	play_row->add_child(time_slider);
+	time_label = memnew(Label);
+	play_row->add_child(time_label);
+
+	play_timer = memnew(Timer);
+	play_timer->set_wait_time(1.0 / 30.0);
+	play_timer->connect("timeout", callable_mp(this, &VideoDock::_on_tick));
+	add_child(play_timer);
+
 	ScrollContainer *scroll_t = memnew(ScrollContainer);
 	scroll_t->set_custom_minimum_size(Size2(0, 190));
 	scroll_t->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
@@ -222,6 +261,10 @@ double VideoDock::get_duration() const {
 	return (double)meta.get("duration", 10.0);
 }
 
+Color VideoDock::get_background() const {
+	return Color::html(String(meta.get("background", "#000000")));
+}
+
 String VideoDock::item_label(const Dictionary &p_item) const {
 	const String kind = p_item.get("type", "text");
 	if (kind == "text") {
@@ -271,8 +314,11 @@ void VideoDock::_load_scene() {
 	} else {
 		_say("scene.json belum ada, mulai kosong");
 	}
+	preview->clear_cache();
 	f_duration->set_value_no_signal(get_duration());
+	time_slider->set_max(get_duration());
 	_refresh();
+	set_time(0.0);
 }
 
 void VideoDock::_save_scene() {
@@ -338,6 +384,11 @@ void VideoDock::_delete_item() {
 
 // ---------- Tampilan ----------
 
+void VideoDock::_redraw_all() {
+	timeline->queue_redraw();
+	preview->queue_redraw();
+}
+
 void VideoDock::_refresh() {
 	list->clear();
 	for (int i = 0; i < items.size(); i++) {
@@ -345,11 +396,11 @@ void VideoDock::_refresh() {
 		list->add_item(vformat("%d. %s", i + 1, item_label(it)));
 	}
 	timeline->set_custom_minimum_size(Size2(0, VideoTimeline::TOP + items.size() * VideoTimeline::ROW_H + 8));
-	timeline->queue_redraw();
 	if (selected >= items.size()) {
 		selected = -1;
 	}
 	_fill_form();
+	_redraw_all();
 }
 
 void VideoDock::select_item(int p_index) {
@@ -358,12 +409,19 @@ void VideoDock::select_item(int p_index) {
 		list->select(p_index);
 	}
 	_fill_form();
-	timeline->queue_redraw();
+	_redraw_all();
 }
 
 void VideoDock::timeline_changed() {
 	_fill_form();
-	timeline->queue_redraw();
+	_redraw_all();
+}
+
+void VideoDock::set_time(double p_time) {
+	current_time = CLAMP(p_time, 0.0, get_duration());
+	time_slider->set_value_no_signal(current_time);
+	time_label->set_text(vformat("%.1f / %.1f s", current_time, get_duration()));
+	_redraw_all();
 }
 
 void VideoDock::_fill_form() {
@@ -395,7 +453,8 @@ void VideoDock::_on_list_selected(int p_index) {
 
 void VideoDock::_on_duration(double p_value) {
 	meta["duration"] = p_value;
-	timeline->queue_redraw();
+	time_slider->set_max(p_value);
+	set_time(MIN(current_time, p_value));
 }
 
 void VideoDock::_on_text(const String &p_text) {
@@ -406,7 +465,10 @@ void VideoDock::_on_text(const String &p_text) {
 	const String key = String(it.get("type", "text")) == "image" ? "src" : "text";
 	it[key] = p_text;
 	list->set_item_text(selected, vformat("%d. %s", selected + 1, item_label(it)));
-	timeline->queue_redraw();
+	if (key == "src") {
+		preview->clear_cache();
+	}
+	_redraw_all();
 }
 
 void VideoDock::_on_num(double p_value, int p_field) {
@@ -416,7 +478,7 @@ void VideoDock::_on_num(double p_value, int p_field) {
 	static const char *keys[] = { "start", "end", "x", "y", "size" };
 	Dictionary it = items[selected];
 	it[String(keys[p_field])] = p_value;
-	timeline->queue_redraw();
+	_redraw_all();
 }
 
 void VideoDock::_on_color(const Color &p_color) {
@@ -425,7 +487,32 @@ void VideoDock::_on_color(const Color &p_color) {
 	}
 	Dictionary it = items[selected];
 	it["color"] = "#" + p_color.to_html(false);
-	timeline->queue_redraw();
+	_redraw_all();
+}
+
+void VideoDock::_on_slider(double p_value) {
+	set_time(p_value);
+}
+
+void VideoDock::_on_play() {
+	if (play_timer->is_stopped()) {
+		if (current_time >= get_duration() - 0.05) {
+			set_time(0.0);
+		}
+		play_timer->start();
+		play_button->set_text("Jeda");
+	} else {
+		play_timer->stop();
+		play_button->set_text("Putar");
+	}
+}
+
+void VideoDock::_on_tick() {
+	set_time(current_time + 1.0 / 30.0);
+	if (current_time >= get_duration()) {
+		play_timer->stop();
+		play_button->set_text("Putar");
+	}
 }
 
 VideoTabPlugin::VideoTabPlugin() {
