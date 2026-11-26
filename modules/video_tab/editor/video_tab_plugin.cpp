@@ -21,6 +21,7 @@
 #include "scene/scene_string_names.h"
 #include "servers/display/display_server.h"
 #include "video_preview.h"
+#include "video_render_panel.h"
 
 static const char *SCENE_PATH = "res://scene.json";
 
@@ -148,8 +149,13 @@ VideoDock::VideoDock() {
 	meta["background"] = "#101A2B";
 	meta["language"] = "id";
 
+	// Seluruh isi tab bisa digulir, supaya muat di layar HP.
+	ScrollContainer *page = memnew(ScrollContainer);
+	page->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	add_child(page);
 	VBoxContainer *root = memnew(VBoxContainer);
-	add_child(root);
+	root->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	page->add_child(root);
 
 	HFlowContainer *bar = memnew(HFlowContainer);
 	root->add_child(bar);
@@ -214,7 +220,7 @@ VideoDock::VideoDock() {
 	root->add_child(list);
 
 	form_scroll = memnew(ScrollContainer);
-	form_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	form_scroll->set_custom_minimum_size(Size2(0, 260));
 	form_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	root->add_child(form_scroll);
 
@@ -251,6 +257,8 @@ VideoDock::VideoDock() {
 	f_color->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	f_color->connect("color_changed", callable_mp(this, &VideoDock::_on_color));
 	form->add_child(f_color);
+
+	root->add_child(memnew(VideoRenderPanel(this)));
 
 	_load_scene();
 }

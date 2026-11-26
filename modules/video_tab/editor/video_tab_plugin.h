@@ -105,6 +105,7 @@ public:
 	double get_time() const { return current_time; }
 	Color get_background() const;
 	int get_selected() const { return selected; }
+	String get_scene_json() const { return _to_json(); }
 	String item_label(const Dictionary &p_item) const;
 	void select_item(int p_index);
 	void set_time(double p_time);
