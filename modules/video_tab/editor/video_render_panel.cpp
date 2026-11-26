@@ -1,8 +1,8 @@
 #include "video_render_panel.h"
 
+#include "core/crypto/crypto_core.h"
 #include "core/io/config_file.h"
 #include "core/io/json.h"
-#include "core/io/marshalls.h"
 #include "core/object/callable_mp.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
@@ -16,6 +16,13 @@ static const char *SETTINGS_PATH = "user://video_tab.cfg";
 static const char *BRANCH = "main";
 static const char *WORKFLOW = "render.yml";
 static const char *DEFAULT_REPO = "hafefrock/godot-render";
+
+static String _text_of(const PackedByteArray &p_body) {
+	if (p_body.is_empty()) {
+		return String();
+	}
+	return String::utf8((const char *)p_body.ptr(), p_body.size());
+}
 
 VideoRenderPanel::VideoRenderPanel(VideoDock *p_dock) {
 	dock = p_dock;
@@ -96,7 +103,7 @@ String VideoRenderPanel::_contents_url() const {
 void VideoRenderPanel::_fail(const String &p_text, int p_code, const PackedByteArray &p_body) {
 	step = STEP_NONE;
 	String msg;
-	Variant v = JSON::parse_string(p_body.get_string_from_utf8());
+	Variant v = JSON::parse_string(_text_of(p_body));
 	if (v.get_type() == Variant::DICTIONARY) {
 		Dictionary d = v;
 		msg = String(d.get("message", ""));
@@ -134,7 +141,7 @@ void VideoRenderPanel::_on_done(int p_result, int p_code, const PackedStringArra
 	switch (step) {
 		case STEP_GET_SHA: {
 			if (p_code == 200) {
-				Variant v = JSON::parse_string(p_body.get_string_from_utf8());
+				Variant v = JSON::parse_string(_text_of(p_body));
 				if (v.get_type() == Variant::DICTIONARY) {
 					Dictionary d = v;
 					sha = String(d.get("sha", ""));
@@ -143,9 +150,10 @@ void VideoRenderPanel::_on_done(int p_result, int p_code, const PackedStringArra
 				_fail("Gagal membaca repo", p_code, p_body);
 				return;
 			}
+			const CharString utf8 = payload_json.utf8();
 			Dictionary body;
 			body["message"] = "Update scene.json dari editor Video";
-			body["content"] = Marshalls::get_singleton()->utf8_to_base64(payload_json);
+			body["content"] = CryptoCore::b64_encode_str((const uint8_t *)utf8.get_data(), utf8.length());
 			body["branch"] = String(BRANCH);
 			if (!sha.is_empty()) {
 				body["sha"] = sha;
