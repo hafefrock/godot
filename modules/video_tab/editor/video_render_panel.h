@@ -39,5 +39,8 @@ class VideoRenderPanel : public VBoxContainer {
 	void _on_done(int p_result, int p_code, const PackedStringArray &p_headers, const PackedByteArray &p_body);
 
 public:
+	// Dipanggil dari tombol Render di bilah atas.
+	void request_render() { _on_send(); }
+
 	VideoRenderPanel(VideoDock *p_dock);
 };
